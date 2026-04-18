@@ -1,0 +1,39 @@
+# -----------------------------------------------------------------------
+# SAC + Always-On Latent Correction
+# -----------------------------------------------------------------------
+
+env:
+  task: reach-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 0.1
+  batch_size: 256
+
+correction:
+  hidden_dim: 128           # Smaller than actor to keep it as a "light touch"
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3         # L2 penalty weight on ||Δz||; increase if corrections grow too large
+  output_scale: 0.1         # Multiplier on module output; keeps early corrections small
+
+training:
+  total_steps: 100_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 10_000
+  eval_episodes: 10
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_latent_always
+  log_freq: 1_000

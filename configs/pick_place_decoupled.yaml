@@ -1,0 +1,53 @@
+# -----------------------------------------------------------------------
+# SAC + Decoupled Trigger-Gated Latent Correction — pick-place-v3
+#
+# Fixes the co-adaptation failure in sac_pp_triggered_v2:
+#   - Base actor trained independently (no correction in actor loss)
+#   - Correction trained on frozen base latent (torch.no_grad on trunk)
+#   - Critic uses base policy for Bellman target
+# -----------------------------------------------------------------------
+
+env:
+  task: pick-place-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0        # initial alpha — matches effective default (log_alpha init at 0)
+  alpha_lr: 1.0e-4  # slower than actor/critic lr to reduce early collapse
+  alpha_min: 0.05   # floor to prevent exploration death (pilot1 confirmed stable for seeds 0/1)
+  batch_size: 128
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+trigger:
+  type: pick_place
+  window: 20
+  min_progress: 0.01
+  cooldown: 15
+  success_threshold: 0.05
+  pregrasp_close: 0.04
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_pp_decoupled
+  log_freq: 1_000

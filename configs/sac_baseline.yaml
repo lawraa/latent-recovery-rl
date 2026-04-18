@@ -1,0 +1,32 @@
+# -----------------------------------------------------------------------
+# SAC Baseline — Meta-World MT1 single task
+# -----------------------------------------------------------------------
+
+env:
+  task: reach-v3            # MT1 task name (e.g. reach-v3, push-v3, drawer-open-v3)
+  max_episode_steps: 500    # Meta-World default; enforced by the wrapper
+
+agent:
+  hidden_dim: 256           # Width of all hidden layers
+  n_layers: 2               # Number of hidden layers in trunk / critic MLPs
+  lr: 3.0e-4                # Adam learning rate (shared across actor / critic / alpha)
+  gamma: 0.99               # Discount factor
+  tau: 0.005                # Soft target update coefficient
+  auto_alpha: true          # Automatically tune entropy temperature
+  alpha: 0.1                # Initial α (also used if auto_alpha=false)
+  batch_size: 256
+
+training:
+  total_steps: 100_000
+  warmup_steps: 5_000       # Random exploration before first gradient update
+  updates_per_step: 1       # Gradient updates per environment step
+  buffer_capacity: 1_000_000
+  eval_freq: 10_000         # Evaluate every N env steps
+  eval_episodes: 10         # Number of deterministic rollouts per eval
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_baseline
+  log_freq: 1_000           # Log training metrics every N steps

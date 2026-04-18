@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "latent-recovery-rl"
+version = "0.1.0"
+description = "SAC with latent correction for MetaWorld manipulation"
+requires-python = ">=3.10"
+dependencies = [
+  "modal>=1.0.0",
+]
+
+[project.optional-dependencies]
+remote = [
+  "torch>=2.0.0",
+  "numpy>=1.24.0",
+  "wandb>=0.16.0",
+  "pyyaml>=6.0",
+  "tqdm>=4.65.0",
+  "mujoco>=3.0.0,<4.0.0",
+  "gymnasium>=0.29.0",
+  "imageio>=2.31.0",
+  "imageio-ffmpeg>=0.4.9",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]

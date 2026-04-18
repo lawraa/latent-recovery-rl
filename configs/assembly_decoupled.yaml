@@ -1,0 +1,59 @@
+# -----------------------------------------------------------------------
+# SAC + Decoupled Latent Correction — assembly-v3
+# Hyperparameters match pick_place_decoupled.yaml for cross-task comparability.
+#
+# Trigger note: AssemblyTrigger is three-phase.
+#   Phase A (approach): tracks hand-to-wrench distance while grasp_success=0.
+#   Phase B (transport): tracks wrench-to-peg distance (||obs[4:7]-obs[-3:]||)
+#                        while grasp_success=1.
+#   Drop detection: fires immediately on grasp_success 1->0 flip.
+#
+# info['obj_to_target'] is hardcoded 0 in MetaWorld assembly-v3.
+# Success is detected via in_place_reward > 1 - success_threshold.
+# Peg position is read directly from obs[-3:] (last 3 obs dims).
+# -----------------------------------------------------------------------
+
+env:
+  task: assembly-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
+  batch_size: 128
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+trigger:
+  type: assembly
+  window: 20
+  min_progress: 0.005
+  cooldown: 15
+  success_threshold: 0.05
+  pregrasp_close: 0.04
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_assembly_decoupled
+  log_freq: 1_000

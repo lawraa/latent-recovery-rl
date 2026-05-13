@@ -4,7 +4,7 @@
 
 **Shou-Jen Chen** · UC Berkeley EECS · CS285 Deep Reinforcement Learning
 
-[![Paper](https://img.shields.io/badge/Paper-CS285_Final_Project-red?style=for-the-badge&logo=arxiv)](https://github.com/lawraa/latent-recovery-rl)
+[![Paper](https://img.shields.io/badge/Paper-CS285_Final_Project-red?style=for-the-badge&logo=arxiv)](https://github.com/lawraa/latent-recovery-rl/blob/main/paper/chen2026_near_failure_latent_corrections.pdf)
 [![Meta-World](https://img.shields.io/badge/Benchmark-Meta--World_3.0-green?style=for-the-badge)](https://github.com/Farama-Foundation/Metaworld)
 
 </div>

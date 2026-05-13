@@ -1,0 +1,59 @@
+# -----------------------------------------------------------------------
+# SAC + Decoupled Latent Correction — pick-place-v3
+# Trigger: DeltaZTrigger (task-agnostic, no task-specific geometry)
+#
+# The DeltaZTrigger fires when ||Δz|| exceeds the 90th percentile of
+# recent correction norms.  The correction module is trained with L2
+# regularisation (λ‖Δz‖²), so large ‖Δz‖ only emerges when the
+# Q-benefit strongly outweighs the regularisation penalty — the
+# correction is "confident" on that state.
+#
+# Comparison target: pick_place_decoupled.yaml (heuristic trigger).
+# All agent/training/correction hyperparameters are identical.
+# Only the trigger section differs.
+# -----------------------------------------------------------------------
+
+env:
+  task: pick-place-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
+  batch_size: 128
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+trigger:
+  type: delta_z
+  percentile: 90        # fire on top 10% of states by ||Δz||
+  window_size: 10000    # rolling window for percentile computation
+  min_samples: 500      # don't fire until 500 norms have been collected
+  cooldown: 15          # steps to stay active after firing (matches heuristic)
+  update_freq: 100      # recompute percentile threshold every 100 steps
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_pp_dz_trigger
+  log_freq: 1_000

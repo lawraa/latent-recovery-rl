@@ -49,7 +49,7 @@ def _base_action(agent, obs_t: torch.Tensor) -> np.ndarray:
 def _corrected_action(agent, obs_t: torch.Tensor) -> np.ndarray:
     """Run the corrected path unconditionally (always-on mode)."""
     with torch.no_grad():
-        z       = agent.actor.trunk(obs_t)
+        z       = agent.actor.encoder(obs_t)
         delta_z = agent.correction(obs_t, z)
         z_corr  = z + delta_z
         action  = torch.tanh(agent.actor.mean_head(z_corr))
@@ -113,7 +113,7 @@ def evaluate(agent, env, mode: str, trigger_cfg=None):
             if mode in ("correction_on", "triggered") and hasattr(agent, "correction"):
                 with torch.no_grad():
                     obs_t2 = torch.FloatTensor(obs).unsqueeze(0).to(device)
-                    z      = agent.actor.trunk(obs_t2)
+                    z      = agent.actor.encoder(obs_t2)
                     dz     = agent.correction(obs_t2, z)
                     total_delta_z += dz.norm(dim=-1).mean().item()
                     delta_z_steps += 1

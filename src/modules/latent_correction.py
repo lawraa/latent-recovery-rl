@@ -1,29 +1,9 @@
-"""Learnable latent correction module: f(s, z) → Δz.
-
-The correction is additive:
-    z' = z + f(s, z)
-
-Output layer is initialised near-zero so the module starts as a no-op,
-preserving base-policy behaviour at the beginning of training.
-
-Phase 3 will gate this behind a near-failure trigger; for now it is
-always-on.
-"""
+"""Latent correction module: f(s, z) → Δz, applied as z' = z + Δz."""
 import torch
 import torch.nn as nn
 
 
 class LatentCorrectionModule(nn.Module):
-    """MLP that maps (obs, latent_z) → Δz.
-
-    Args:
-        obs_dim:      Dimension of the environment observation.
-        latent_dim:   Dimension of the actor trunk output (z).
-        hidden_dim:   Width of the MLP hidden layers.
-        n_layers:     Number of hidden layers.
-        output_scale: Multiplier on the output — keeps early corrections
-                      small without needing careful weight initialisation.
-    """
 
     def __init__(
         self,
@@ -41,7 +21,7 @@ class LatentCorrectionModule(nn.Module):
         layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
         for _ in range(n_layers - 1):
             layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
-        self.trunk = nn.Sequential(*layers)
+        self.net = nn.Sequential(*layers)
 
         self.out = nn.Linear(hidden_dim, latent_dim)
         # Near-zero init → correction ≈ 0 at training start
@@ -49,14 +29,5 @@ class LatentCorrectionModule(nn.Module):
         nn.init.zeros_(self.out.bias)
 
     def forward(self, obs: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
-        """Compute the additive latent correction Δz.
-
-        Args:
-            obs: (B, obs_dim)
-            z:   (B, latent_dim)  trunk output from the actor
-
-        Returns:
-            delta_z: (B, latent_dim)
-        """
         x = torch.cat([obs, z], dim=-1)
-        return self.out(self.trunk(x)) * self.output_scale
+        return self.out(self.net(x)) * self.output_scale

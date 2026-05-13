@@ -65,7 +65,7 @@ class SACAgentActionResidual(SACAgent):
         obs_t = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
         with torch.no_grad():
             if triggered:
-                z = self.actor.trunk(obs_t)
+                z = self.actor.encoder(obs_t)
                 if deterministic:
                     base_action = torch.tanh(self.actor.mean_head(z))
                 else:
@@ -126,7 +126,7 @@ class SACAgentActionResidual(SACAgent):
         # corrected pre-tanh value x_corr = atanh(base_action) + Δa.
         # ----------------------------------------------------------
         with torch.no_grad():
-            z_base       = self.actor.trunk(obs)
+            z_base       = self.actor.encoder(obs)
             mean_base    = self.actor.mean_head(z_base)
             log_std_base = self.actor.log_std_head(z_base).clamp(LOG_STD_MIN, LOG_STD_MAX)
             std_base     = log_std_base.exp()

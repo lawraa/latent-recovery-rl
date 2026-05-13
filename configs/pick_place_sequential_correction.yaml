@@ -1,10 +1,15 @@
 # -----------------------------------------------------------------------
-# SAC + Decoupled Trigger-Gated Latent Correction — pick-place-v3
+# SAC Sequential Correction — pick-place-v3
 #
-# Fixes the co-adaptation failure in sac_pp_triggered_v2:
-#   - Base actor trained independently (no correction in actor loss)
-#   - Correction trained on frozen base latent (torch.no_grad on encoder)
-#   - Critic uses base policy for Bellman target
+# Phase 2 only: correction module trained on top of a frozen converged
+# baseline.  The pretrained checkpoint is passed via --pretrained-checkpoint
+# on the command line (not set here, since it differs per seed).
+#
+# Total steps: 1,500,000 — shorter than the 2.5M concurrent run because
+# the base actor is already converged; only the correction module trains.
+#
+# All other hyperparameters match pick_place_decoupled.yaml for a fair
+# architectural comparison.
 # -----------------------------------------------------------------------
 
 env:
@@ -18,9 +23,9 @@ agent:
   gamma: 0.99
   tau: 0.005
   auto_alpha: true
-  alpha: 1.0        # initial alpha — matches effective default (log_alpha init at 0)
-  alpha_lr: 1.0e-4  # slower than actor/critic lr to reduce early collapse
-  alpha_min: 0.05   # floor to prevent exploration death (pilot1 confirmed stable for seeds 0/1)
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
   batch_size: 128
 
 correction:
@@ -39,7 +44,7 @@ trigger:
   pregrasp_close: 0.04
 
 training:
-  total_steps: 2_500_000
+  total_steps: 1_500_000
   warmup_steps: 5_000
   updates_per_step: 1
   buffer_capacity: 1_000_000
@@ -49,5 +54,5 @@ training:
 logging:
   use_wandb: false
   project: latent-recovery-rl
-  run_name: sac_pp_decoupled
+  run_name: sac_pp_seq_correction
   log_freq: 1_000

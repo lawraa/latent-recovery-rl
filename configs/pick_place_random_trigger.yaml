@@ -1,0 +1,61 @@
+# -----------------------------------------------------------------------
+# SAC + Decoupled Latent Correction — pick-place-v3 — RANDOM TRIGGER
+#
+# Ablation baseline for the heuristic trigger.
+# Identical to pick_place_decoupled.yaml in every way except trigger type.
+#
+# RandomTrigger fires at a fixed probability each step (Bernoulli, no
+# state-dependent logic).  fire_prob=0.05 matches the observed ~5% mean
+# fire_rate of PickPlaceTrigger during training.
+#
+# Expected result: if heuristic trigger >> random trigger, near-failure
+# STATE SELECTION is the mechanism, not just firing frequency.
+# If random trigger ≈ heuristic, any gating works and targeting doesn't
+# matter — a much weaker claim for the paper.
+# -----------------------------------------------------------------------
+
+env:
+  task: pick-place-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
+  batch_size: 128
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+trigger:
+  type: random
+  fire_prob: 0.05          # matches heuristic ~5% mean fire rate
+  window: 20               # unused by RandomTrigger but required by factory
+  min_progress: 0.01
+  cooldown: 15
+  success_threshold: 0.05
+  pregrasp_close: 0.04
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_pp_random_trigger
+  log_freq: 1_000

@@ -1,16 +1,7 @@
-"""Soft Actor-Critic (SAC) with automatic entropy tuning.
+"""Soft Actor-Critic with automatic entropy tuning.
 
-Design note: the GaussianActor separates its forward pass into two stages:
-    1. trunk(obs) → latent z            (exposed for Phase 2 correction)
-    2. heads(z)   → (mean, log_std)
-
-The actor's ``forward`` method accepts an optional ``z_override`` argument so
-the latent correction module (Phase 2) can inject a corrected latent without
-modifying this file.
-
-References:
-    Haarnoja et al., "Soft Actor-Critic: Off-Policy Maximum Entropy Deep RL
-    with a Stochastic Actor" (2018).
+GaussianActor splits into encoder(obs) -> z and linear heads(z) -> (mu, log_std).
+The forward method accepts an optional z_override for latent correction injection.
 """
 import math
 import os
@@ -46,20 +37,20 @@ class GaussianActor(nn.Module):
     """Squashed-Gaussian stochastic actor.
 
     Architecture:
-        trunk  : obs_dim → hidden_dim (the latent z)
-        heads  : hidden_dim → action_dim  (mean + log_std)
+        encoder : obs_dim → hidden_dim (the latent z)
+        heads   : hidden_dim → action_dim  (mean + log_std)
 
-    The trunk output is the latent representation z that Phase 2 will correct.
+    The encoder output is the latent representation z that the correction module injects into.
     """
 
     def __init__(self, obs_dim: int, action_dim: int, hidden_dim: int = 256, n_layers: int = 2):
         super().__init__()
 
-        # Trunk: obs → latent z
-        trunk_layers: list[nn.Module] = [nn.Linear(obs_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.Tanh()]
+        # Encoder: obs → latent z
+        enc_layers: list[nn.Module] = [nn.Linear(obs_dim, hidden_dim), nn.LayerNorm(hidden_dim), nn.Tanh()]
         for _ in range(n_layers - 1):
-            trunk_layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
-        self.trunk = nn.Sequential(*trunk_layers)
+            enc_layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
+        self.encoder = nn.Sequential(*enc_layers)
         self.latent_dim = hidden_dim
 
         # Action distribution heads
@@ -72,8 +63,8 @@ class GaussianActor(nn.Module):
             nn.init.zeros_(head.bias)
 
     def get_latent(self, obs: torch.Tensor) -> torch.Tensor:
-        """Return the trunk latent z (no grad tracking — use for external inspection)."""
-        return self.trunk(obs)
+        """Return the encoded latent z (no grad tracking — use for external inspection)."""
+        return self.encoder(obs)
 
     def forward(
         self,
@@ -84,15 +75,15 @@ class GaussianActor(nn.Module):
 
         Args:
             obs:        (B, obs_dim)
-            z_override: if provided, skip the trunk and use this latent instead.
+            z_override: if provided, skip the encoder and use this latent instead.
                         This is the injection point for the latent correction module.
 
         Returns:
             action:   (B, action_dim)  in [-1, 1]
             log_prob: (B, 1)           log π(a|s)
-            z:        (B, hidden_dim)  trunk latent (or z_override)
+            z:        (B, hidden_dim)  encoded latent (or z_override)
         """
-        z = self.trunk(obs) if z_override is None else z_override
+        z = self.encoder(obs) if z_override is None else z_override
 
         mean    = self.mean_head(z)
         log_std = self.log_std_head(z).clamp(LOG_STD_MIN, LOG_STD_MAX)
@@ -113,7 +104,7 @@ class GaussianActor(nn.Module):
     def get_action(self, obs: torch.Tensor, deterministic: bool = False) -> np.ndarray:
         """Select an action for environment interaction (no gradient)."""
         if deterministic:
-            z    = self.trunk(obs)
+            z    = self.encoder(obs)
             mean = self.mean_head(z)
             return torch.tanh(mean).cpu().numpy()
         action, _, _ = self.forward(obs)
@@ -282,7 +273,9 @@ class SACAgent:
 
     def load(self, path: str):
         ckpt = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(ckpt["actor"])
+        # Backward compat: remap old "trunk.*" keys to "encoder.*"
+        actor_sd = {k.replace("trunk.", "encoder.", 1): v for k, v in ckpt["actor"].items()}
+        self.actor.load_state_dict(actor_sd)
         self.critic.load_state_dict(ckpt["critic"])
         self.critic_target.load_state_dict(ckpt["critic_target"])
         self.actor_optim.load_state_dict(ckpt["actor_optim"])

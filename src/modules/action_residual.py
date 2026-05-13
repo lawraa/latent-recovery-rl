@@ -43,7 +43,7 @@ class ActionResidualModule(nn.Module):
         layers: list[nn.Module] = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
         for _ in range(n_layers - 1):
             layers += [nn.Linear(hidden_dim, hidden_dim), nn.ReLU()]
-        self.trunk = nn.Sequential(*layers)
+        self.net = nn.Sequential(*layers)
 
         self.out = nn.Linear(hidden_dim, action_dim)
         # Near-zero init → correction ≈ 0 at training start
@@ -61,4 +61,4 @@ class ActionResidualModule(nn.Module):
             delta_a: (B, action_dim)  pre-tanh residual
         """
         x = torch.cat([obs, action], dim=-1)
-        return self.out(self.trunk(x)) * self.output_scale
+        return self.out(self.net(x)) * self.output_scale

@@ -8,7 +8,7 @@ env:
 
 agent:
   hidden_dim: 256           # Width of all hidden layers
-  n_layers: 2               # Number of hidden layers in trunk / critic MLPs
+  n_layers: 2               # Number of hidden layers in encoder / critic MLPs
   lr: 3.0e-4                # Adam learning rate (shared across actor / critic / alpha)
   gamma: 0.99               # Discount factor
   tau: 0.005                # Soft target update coefficient

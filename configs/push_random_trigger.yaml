@@ -1,14 +1,16 @@
 # -----------------------------------------------------------------------
-# SAC + Decoupled Trigger-Gated Latent Correction — pick-place-v3
+# SAC + Decoupled Latent Correction — push-v3 — RANDOM TRIGGER
 #
-# Fixes the co-adaptation failure in sac_pp_triggered_v2:
-#   - Base actor trained independently (no correction in actor loss)
-#   - Correction trained on frozen base latent (torch.no_grad on encoder)
-#   - Critic uses base policy for Bellman target
+# Ablation baseline for the heuristic trigger.
+# Identical to push_decoupled.yaml in every way except trigger type.
+#
+# RandomTrigger fires at a fixed probability each step (Bernoulli, no
+# state-dependent logic).  fire_prob=0.05 matches the observed ~5% mean
+# fire_rate of PushTrigger during training.
 # -----------------------------------------------------------------------
 
 env:
-  task: pick-place-v3
+  task: push-v3
   max_episode_steps: 500
 
 agent:
@@ -18,9 +20,9 @@ agent:
   gamma: 0.99
   tau: 0.005
   auto_alpha: true
-  alpha: 1.0        # initial alpha — matches effective default (log_alpha init at 0)
-  alpha_lr: 1.0e-4  # slower than actor/critic lr to reduce early collapse
-  alpha_min: 0.05   # floor to prevent exploration death (pilot1 confirmed stable for seeds 0/1)
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
   batch_size: 128
 
 correction:
@@ -31,12 +33,13 @@ correction:
   output_scale: 0.1
 
 trigger:
-  type: pick_place
-  window: 20
+  type: random
+  fire_prob: 0.05          # matches heuristic ~5% mean fire rate
+  window: 20               # unused by RandomTrigger but required by factory
   min_progress: 0.01
   cooldown: 15
   success_threshold: 0.05
-  pregrasp_close: 0.04
+  pregrasp_close: 0.06
 
 training:
   total_steps: 2_500_000
@@ -49,5 +52,5 @@ training:
 logging:
   use_wandb: false
   project: latent-recovery-rl
-  run_name: sac_pp_decoupled
+  run_name: sac_push_random_trigger
   log_freq: 1_000

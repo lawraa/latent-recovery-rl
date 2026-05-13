@@ -1,11 +1,29 @@
-"""Train SAC + trigger-gated latent correction on pick-place-v3.
+"""Train latent correction sequentially on top of a converged SAC baseline.
 
-The correction module is trained always-on (identical to train_with_correction.py).
-The trigger gates whether the correction is APPLIED during action selection.
+This script implements Phase 2 of the sequential training protocol:
+  Phase 1 (done): train standard SAC to convergence → save final.pt
+  Phase 2 (this): load final.pt, freeze actor, train correction only
 
-Usage:
-    python scripts/train_triggered.py
-    python scripts/train_triggered.py --seed 1 --run-name sac_pp_triggered_s1 --wandb
+The purpose is to test whether concurrent training is actually necessary.
+If sequential correction (Phase 2 only) matches concurrent decoupled, the
+paper's concurrency claim needs to be softened.  If it underperforms —
+especially on seeds where the base policy itself failed (e.g., pick-place
+s3 at 0%) — that validates the claim that the correction must be active
+during the base actor's learning to provide a useful training signal.
+
+Usage
+-----
+    # Pick-place seed 0, loading the converged baseline
+    python scripts/train_sequential_correction.py \\
+        --config configs/pick_place_sequential_correction.yaml \\
+        --pretrained-checkpoint experiments/sac_pp_baseline_s0_pilot/final.pt \\
+        --seed 0 --run-name sac_pp_seq_correction_s0 --wandb
+
+    # Push-v3 seed 3 (baseline reached 70%)
+    python scripts/train_sequential_correction.py \\
+        --config configs/push_sequential_correction.yaml \\
+        --pretrained-checkpoint experiments/sac_push_baseline_s3/final.pt \\
+        --seed 3 --run-name sac_push_seq_correction_s3 --wandb
 """
 import sys
 import os
@@ -16,7 +34,7 @@ import time
 import yaml
 
 from src.envs.metaworld_wrapper import make_env
-from src.agents.sac_triggered import SACAgentTriggered
+from src.agents.sac_sequential_correction import SACAgentSequentialCorrection
 from src.triggers.near_failure import make_trigger
 from src.utils.replay_buffer import ReplayBuffer
 from src.utils.logger import Logger
@@ -24,12 +42,7 @@ from src.utils.misc import set_seed, get_device, dict_to_namespace, namespace_to
 
 
 def evaluate(agent, env, trigger_cfg):
-    """Evaluate on all 50 MT1 task variants with the trigger active.
-
-    Returns (mean_reward, success_rate, mean_trigger_rate).
-    success_rate is the fraction of the 50 task variants on which the
-    agent achieved success — the standard Meta-World MT1 protocol.
-    """
+    """Evaluate on all 50 MT1 task variants with the trigger active."""
     total_reward    = 0.0
     total_success   = 0.0
     total_trig_rate = 0.0
@@ -37,7 +50,7 @@ def evaluate(agent, env, trigger_cfg):
 
     for idx in range(n):
         obs, info = env.reset_to_task(idx)
-        trigger    = make_trigger(trigger_cfg)
+        trigger    = make_trigger(trigger_cfg, agent=agent)
         done       = False
         ep_success = 0.0
 
@@ -52,20 +65,19 @@ def evaluate(agent, env, trigger_cfg):
         total_success   += ep_success
         total_trig_rate += trigger.fire_rate
 
-    return (
-        total_reward    / n,
-        total_success   / n,
-        total_trig_rate / n,
-    )
+    return total_reward / n, total_success / n, total_trig_rate / n
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config",   type=str, default="configs/pick_place_triggered.yaml")
-    parser.add_argument("--task",     type=str, default=None)
-    parser.add_argument("--seed",     type=int, default=None)
-    parser.add_argument("--run-name", type=str, default=None)
-    parser.add_argument("--wandb",    action="store_true")
+    parser.add_argument("--config",                type=str, required=False,
+                        default="configs/pick_place_sequential_correction.yaml")
+    parser.add_argument("--pretrained-checkpoint", type=str, required=True,
+                        help="Path to a converged SAC baseline final.pt checkpoint.")
+    parser.add_argument("--task",                  type=str, default=None)
+    parser.add_argument("--seed",                  type=int, default=None)
+    parser.add_argument("--run-name",              type=str, default=None)
+    parser.add_argument("--wandb",                 action="store_true")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -100,9 +112,23 @@ def main():
     action_dim = env.action_space.shape[0]
     print(f"Task: {cfg.env.task} | obs_dim={obs_dim} | action_dim={action_dim}")
 
-    agent   = SACAgentTriggered(obs_dim, action_dim, cfg.agent)
+    # Create agent and load the converged baseline.
+    # The actor is frozen inside load_baseline().
+    agent = SACAgentSequentialCorrection(obs_dim, action_dim, cfg.agent)
+    agent.load_baseline(args.pretrained_checkpoint)
+
     buffer  = ReplayBuffer(obs_dim, action_dim, capacity=cfg.training.buffer_capacity)
-    trigger = make_trigger(cfg.trigger)
+    trigger = make_trigger(cfg.trigger, agent=agent)
+
+    # Evaluate the frozen base actor before any correction training so we
+    # have a baseline reference point for this exact seed.
+    print("\nEvaluating frozen base actor before correction training...")
+    base_r, base_succ, _ = evaluate(agent, eval_env, cfg.trigger)
+    print(f"  Frozen base SR: {base_succ:.1%}  reward: {base_r:.1f}\n")
+    logger.log(
+        {"eval/base_actor_sr": base_succ, "eval/base_actor_reward": base_r},
+        step=0,
+    )
 
     obs, info  = env.reset()
     trigger.reset()
@@ -114,12 +140,11 @@ def main():
 
     for step in range(1, cfg.training.total_steps + 1):
 
-        # Update trigger with current obs + info (from previous step)
         triggered = trigger.update(obs, info)
 
         if step <= cfg.training.warmup_steps:
             action    = env.action_space.sample()
-            triggered = False   # don't apply correction during random warmup
+            triggered = False
         else:
             action = agent.select_action(obs, deterministic=False, triggered=triggered)
 
@@ -139,16 +164,16 @@ def main():
                 print(
                     f"Step {step:7d} | Ep {ep_num:4d} | "
                     f"R {ep_reward:8.2f} | Succ {ep_success:.0f} | "
-                    f"TrigRate {trigger.fire_rate:.2f} | "
+                    f"TrigRate {trigger.fire_rate:.3f} | "
                     f"EpLen {ep_steps:4d} | {elapsed:.0f}s"
                 )
                 logger.log(
                     {
-                        "train/episode_reward":   ep_reward,
-                        "train/episode_success":  ep_success,
-                        "train/episode_length":   ep_steps,
+                        "train/episode_reward":    ep_reward,
+                        "train/episode_success":   ep_success,
+                        "train/episode_length":    ep_steps,
                         "train/trigger_fire_rate": trigger.fire_rate,
-                        "train/episodes":         ep_num,
+                        "train/episodes":          ep_num,
                     },
                     step=step,
                 )
@@ -159,7 +184,6 @@ def main():
             ep_success = 0.0
             ep_steps   = 0
 
-        # Gradient update (always-on: correction trained regardless of trigger)
         if step > cfg.training.warmup_steps and len(buffer) >= cfg.agent.batch_size:
             for _ in range(cfg.training.updates_per_step):
                 batch   = buffer.sample(cfg.agent.batch_size)
@@ -183,9 +207,9 @@ def main():
             )
             logger.log(
                 {
-                    "eval/mean_reward":    eval_r,
-                    "eval/success_rate":   eval_succ,
-                    "eval/trigger_rate":   eval_trig,
+                    "eval/mean_reward":   eval_r,
+                    "eval/success_rate":  eval_succ,
+                    "eval/trigger_rate":  eval_trig,
                 },
                 step=step,
             )

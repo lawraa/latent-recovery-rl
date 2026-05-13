@@ -1,0 +1,53 @@
+# -----------------------------------------------------------------------
+# TD3 + Decoupled Latent Correction — door-open-v3
+# Gradient isolation fix (expected: no co-adaptation).
+#
+# Trigger: DoorOpenTrigger (same heuristic as SAC decoupled door-open).
+# Trigger note: obj_to_target is hardcoded 0 in MetaWorld door-open-v3.
+# DoorOpenTrigger uses in_place_reward for Phase B stall detection.
+# -----------------------------------------------------------------------
+
+env:
+  task: door-open-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_delay: 2
+  explore_noise: 0.1
+  batch_size: 256
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+trigger:
+  type: door_open
+  window: 20
+  min_progress: 0.01
+  cooldown: 15
+  success_threshold: 0.05
+  pregrasp_close: 0.12
+
+training:
+  total_steps: 1_500_000
+  warmup_steps: 10_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 0
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: td3_door_decoupled
+  log_freq: 1_000

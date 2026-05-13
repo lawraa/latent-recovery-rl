@@ -1,0 +1,46 @@
+# -----------------------------------------------------------------------
+# TD3 Baseline — pick-place-v3
+#
+# Standard TD3 with no correction module.  Used to establish:
+#   (1) Whether TD3 can solve pick-place (sanity check).
+#   (2) Whether removing the correction from the always-on variant
+#       causes a drop — confirming co-adaptation with TD3.
+#
+# TD3-specific hyperparameters vs SAC:
+#   policy_noise  : noise std added to target actions in Bellman target
+#   noise_clip    : clip range for policy noise
+#   policy_delay  : actor + target update every N critic steps
+#   explore_noise : rollout exploration noise std (replaces SAC's entropy)
+#   warmup_steps  : 10k (TD3 deterministic policy needs more random exploration)
+#   batch_size    : 256 (TD3 standard; SAC uses 128)
+# -----------------------------------------------------------------------
+
+env:
+  task: pick-place-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  policy_noise: 0.2
+  noise_clip: 0.5
+  policy_delay: 2
+  explore_noise: 0.1
+  batch_size: 256
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 10_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 0
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: td3_pp_baseline
+  log_freq: 1_000

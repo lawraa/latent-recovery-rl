@@ -39,7 +39,7 @@ def evaluate(agent, env, trigger_cfg):
 
     for idx in range(n):
         obs, info = env.reset_to_task(idx)
-        trigger    = make_trigger(trigger_cfg)
+        trigger    = make_trigger(trigger_cfg, agent=agent)
         done       = False
         ep_success = 0.0
 
@@ -100,7 +100,7 @@ def main():
 
     agent   = SACAgentDecoupled(obs_dim, action_dim, cfg.agent)
     buffer  = ReplayBuffer(obs_dim, action_dim, capacity=cfg.training.buffer_capacity)
-    trigger = make_trigger(cfg.trigger)
+    trigger = make_trigger(cfg.trigger, agent=agent)
 
     obs, info  = env.reset()
     trigger.reset()

@@ -1,32 +1,8 @@
-"""SAC with decoupled latent correction training.
+"""SAC with decoupled latent correction.
 
-Problem with the original triggered design (SACAgentTriggered)
---------------------------------------------------------------
-The always-on update() trains the actor through the corrected path on every
-gradient step.  Over time the base actor co-adapts to rely on the correction
-module — it learns to produce good *inputs for the correction* rather than
-good actions on its own.  When the correction is not applied (~98% of rollout
-steps in the triggered setting), the base actor is weak.  Alpha diverges to
-~40 as a symptom.
-
-Fix: decoupled training
------------------------
-1. Critic   — Bellman target uses the BASE policy (no correction).
-              The Q-function estimates value for the base policy accurately.
-
-2. Actor    — trained with the standard SAC actor loss, no correction in the
-              computation graph.  The base policy is independently optimised
-              and works on its own at all times.
-
-3. Correction — trained on a FROZEN base latent (torch.no_grad on the trunk).
-               No gradient from the correction loss can reach actor parameters.
-               The correction learns to be a pure improvement operator on top
-               of an already-good base policy.
-
-Deployment
-----------
-  triggered=False → base actor only          (step 2 guarantees this is good)
-  triggered=True  → base actor + correction  (step 3 guarantees improvement)
+Three-step update per iteration: (1) critic, (2) base actor via standard SAC,
+(3) correction on a frozen encoder (torch.no_grad) so correction gradients
+cannot reach actor parameters.
 """
 import math
 import os
@@ -60,9 +36,12 @@ class SACAgentDecoupled(SACAgent):
         )
         self.correction_reg_coeff = corr_cfg.reg_coeff
 
-    # ------------------------------------------------------------------
-    # Action selection
-    # ------------------------------------------------------------------
+        # Shared state for DeltaZTrigger — the trigger stores its percentile
+        # threshold here so fresh evaluation trigger instances can read the
+        # value computed during training (they have empty local histories).
+        self._dz_threshold: float      = 0.0
+        self._dz_threshold_ready: bool = False
+
 
     def select_action(
         self,
@@ -72,7 +51,7 @@ class SACAgentDecoupled(SACAgent):
     ) -> np.ndarray:
         obs_t = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            z = self.actor.trunk(obs_t)
+            z = self.actor.encoder(obs_t)
             if triggered:
                 delta_z = self.correction(obs_t, z)
                 z_corr  = z + delta_z
@@ -84,9 +63,6 @@ class SACAgentDecoupled(SACAgent):
             else:
                 return self.actor.get_action(obs_t, deterministic=deterministic).squeeze(0)
 
-    # ------------------------------------------------------------------
-    # Update
-    # ------------------------------------------------------------------
 
     def update(self, batch: Dict[str, np.ndarray]) -> Dict[str, float]:
         obs      = torch.FloatTensor(batch["obs"]).to(self.device)
@@ -95,13 +71,9 @@ class SACAgentDecoupled(SACAgent):
         next_obs = torch.FloatTensor(batch["next_obs"]).to(self.device)
         not_done = torch.FloatTensor(batch["not_dones"]).to(self.device)
 
-        # ----------------------------------------------------------
-        # 1. Critic update — Bellman target uses BASE policy only.
-        #    The Q-function accurately estimates value for the base
-        #    policy, which is what the actor will be trained against.
-        # ----------------------------------------------------------
+        # --- step 1: critic ---
         with torch.no_grad():
-            next_action, next_log_pi, _ = self.actor(next_obs)   # base policy
+            next_action, next_log_pi, _ = self.actor(next_obs)
             q1_next, q2_next = self.critic_target(next_obs, next_action)
             q_next   = torch.min(q1_next, q2_next) - self.alpha * next_log_pi
             q_target = rewards + self.gamma * not_done * q_next
@@ -113,11 +85,7 @@ class SACAgentDecoupled(SACAgent):
         critic_loss.backward()
         self.critic_optim.step()
 
-        # ----------------------------------------------------------
-        # 2. Base actor update — standard SAC, NO correction.
-        #    Gradient flows only through actor trunk + heads.
-        #    The base policy learns to be independently good.
-        # ----------------------------------------------------------
+        # --- step 2: base actor (standard SAC, no correction in graph) ---
         new_action, log_pi, _ = self.actor(obs)
         q1_pi, q2_pi = self.critic(obs, new_action)
         actor_loss = (self.alpha * log_pi - torch.min(q1_pi, q2_pi)).mean()
@@ -126,14 +94,9 @@ class SACAgentDecoupled(SACAgent):
         actor_loss.backward()
         self.actor_optim.step()
 
-        # ----------------------------------------------------------
-        # 3. Correction update — trained on FROZEN base latent.
-        #    torch.no_grad() on the trunk means zero gradient can
-        #    reach actor parameters through this loss.
-        #    The correction learns to be a pure improvement operator.
-        # ----------------------------------------------------------
+        # --- step 3: correction (encoder frozen, gradients reach only f_phi) ---
         with torch.no_grad():
-            z_base = self.actor.trunk(obs)   # frozen: no grad to actor
+            z_base = self.actor.encoder(obs)  # no grad to encoder
 
         delta_z = self.correction(obs, z_base)
         corrected_action, corrected_log_pi, _ = self.actor(
@@ -150,9 +113,7 @@ class SACAgentDecoupled(SACAgent):
         correction_loss.backward()
         self.correction_optim.step()
 
-        # ----------------------------------------------------------
-        # 4. Alpha update — based on base actor entropy only.
-        # ----------------------------------------------------------
+        # --- step 4: alpha update ---
         metrics: Dict[str, float] = {
             "critic_loss":             critic_loss.item(),
             "actor_loss":              actor_loss.item(),
@@ -178,18 +139,13 @@ class SACAgentDecoupled(SACAgent):
             metrics["log_pi_mean"]     = log_pi.mean().item()
             metrics["alpha_objective"] = alpha_objective
 
-        # ----------------------------------------------------------
-        # 5. Soft target update
-        # ----------------------------------------------------------
+        # --- step 5: soft target update ---
         for p, p_t in zip(self.critic.parameters(), self.critic_target.parameters()):
             p_t.data.lerp_(p.data, self.tau)
 
         self._n_updates += 1
         return metrics
 
-    # ------------------------------------------------------------------
-    # Checkpointing
-    # ------------------------------------------------------------------
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -210,10 +166,13 @@ class SACAgentDecoupled(SACAgent):
 
     def load(self, path: str):
         ckpt = torch.load(path, map_location=self.device)
-        self.actor.load_state_dict(ckpt["actor"])
+        # Backward compat: remap old "trunk.*" keys to new names
+        actor_sd = {k.replace("trunk.", "encoder.", 1): v for k, v in ckpt["actor"].items()}
+        corr_sd  = {k.replace("trunk.", "net.", 1): v for k, v in ckpt["correction"].items()}
+        self.actor.load_state_dict(actor_sd)
         self.critic.load_state_dict(ckpt["critic"])
         self.critic_target.load_state_dict(ckpt["critic_target"])
-        self.correction.load_state_dict(ckpt["correction"])
+        self.correction.load_state_dict(corr_sd)
         self.actor_optim.load_state_dict(ckpt["actor_optim"])
         self.critic_optim.load_state_dict(ckpt["critic_optim"])
         self.correction_optim.load_state_dict(ckpt["correction_optim"])

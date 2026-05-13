@@ -58,9 +58,9 @@ class SACAgentWithCorrection(SACAgent):
         """Run actor forward with latent corrected by f(s, z).
 
         Returns (action, log_prob, z, delta_z).
-        Gradients flow through actor trunk, actor heads, and correction module.
+        Gradients flow through actor encoder, actor heads, and correction module.
         """
-        z       = self.actor.trunk(obs)
+        z       = self.actor.encoder(obs)
         delta_z = self.correction(obs, z)
         action, log_prob, _ = self.actor(obs, z_override=z + delta_z)
         return action, log_prob, z, delta_z
@@ -97,7 +97,7 @@ class SACAgentWithCorrection(SACAgent):
         # Next-state action must come from the CORRECTED policy so the
         # Bellman target is consistent with how data was collected.
         with torch.no_grad():
-            z_next       = self.actor.trunk(next_obs)
+            z_next       = self.actor.encoder(next_obs)
             dz_next      = self.correction(next_obs, z_next)
             next_action, next_log_pi, _ = self.actor(
                 next_obs, z_override=z_next + dz_next

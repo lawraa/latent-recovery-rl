@@ -1,0 +1,45 @@
+# -----------------------------------------------------------------------
+# SAC + HER — push-v3
+#
+# Agent hyperparameters identical to push_baseline.yaml for a fair
+# comparison.
+#
+# her_ratio=0.8: 80% of transitions relabeled.
+# success_threshold=0.05: matches MetaWorld _TARGET_RADIUS.
+#
+# Observation layout same as pick-place (verified for push-v3):
+#   obs[4:7]   = puck xyz
+#   obs[36:39] = goal xyz  (||puck - goal|| == info['obj_to_target'])
+# -----------------------------------------------------------------------
+
+env:
+  task: push-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
+  batch_size: 128
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  her_ratio: 0.8
+  success_threshold: 0.05
+  seed: 0
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_push_her
+  log_freq: 1_000

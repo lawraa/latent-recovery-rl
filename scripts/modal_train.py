@@ -208,6 +208,60 @@ def train_decoupled(*args: str) -> None:
     _run_subprocess_with_periodic_volume_commits(cmd)
 
 
+@app.function(
+    volumes={VOLUME_PATH: volume},
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    env=env,
+    image=image,
+    secrets=function_secrets,
+    gpu=DEFAULT_GPU,
+    cpu=DEFAULT_CPU,
+    memory=DEFAULT_MEMORY_MB,
+)
+def train_action_residual(*args: str) -> None:
+    """Run scripts/train_action_residual.py with the given args."""
+    _setup_experiments_symlink()
+    cmd = ["python", "-u", "scripts/train_action_residual.py", *args]
+    print(f"[modal] running: {' '.join(cmd)}")
+    _run_subprocess_with_periodic_volume_commits(cmd)
+
+
+@app.function(
+    volumes={VOLUME_PATH: volume},
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    env=env,
+    image=image,
+    secrets=function_secrets,
+    gpu=DEFAULT_GPU,
+    cpu=DEFAULT_CPU,
+    memory=DEFAULT_MEMORY_MB,
+)
+def train_sequential_correction(*args: str) -> None:
+    """Run scripts/train_sequential_correction.py with the given args."""
+    _setup_experiments_symlink()
+    cmd = ["python", "-u", "scripts/train_sequential_correction.py", *args]
+    print(f"[modal] running: {' '.join(cmd)}")
+    _run_subprocess_with_periodic_volume_commits(cmd)
+
+
+@app.function(
+    volumes={VOLUME_PATH: volume},
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+    env=env,
+    image=image,
+    secrets=function_secrets,
+    gpu=DEFAULT_GPU,
+    cpu=DEFAULT_CPU,
+    memory=DEFAULT_MEMORY_MB,
+)
+def train_learned_trigger(*args: str) -> None:
+    """Run scripts/train_learned_trigger.py with the given args."""
+    _setup_experiments_symlink()
+    cmd = ["python", "-u", "scripts/train_learned_trigger.py", *args]
+    print(f"[modal] running: {' '.join(cmd)}")
+    _run_subprocess_with_periodic_volume_commits(cmd)
+
+
 # ---------------------------------------------------------------------------
 # Local entrypoint (default: train_sac)
 # ---------------------------------------------------------------------------

@@ -1,0 +1,74 @@
+# -----------------------------------------------------------------------
+# SAC + Decoupled Correction + Learned Stall Gate (v4.2)
+# Task: pick-place-v3
+#
+# v4.2 replaces the v4.0/4.1 absolute-threshold + sigmoid formula with a
+# proportional sustained-regression label that is task-agnostic and
+# scale-invariant. See §50 in docs/progress.md for full rationale.
+#
+# Label: frac_stalled = fraction of last stall_window steps where
+#        (ep_peak - reward) > stall_drop_margin * (ep_peak - ep_min)
+#   - Fires when reward has been SUSTAINEDLY below peak (not momentary dip)
+#   - Scale-invariant: 15% of ep_range fires the same regardless of task
+#   - No absolute threshold: ep_range < ε replaces hard-coded 0.01 guard
+#
+# Three phases:
+#   Phase 0 (step < warmup_steps = 5k):
+#     Random actions. Buffer fills.
+#
+#   Phase 1 (5k ≤ step < predictor.warmup = 100k):
+#     gate_active=False: pure base actor rollout.
+#     predictor trains from step predictor.train_start = 10k.
+#     90k steps of pre-training before gate affects rollout.
+#
+#   Phase 2 (step ≥ predictor.warmup = 100k):
+#     gate_active=True: hard gate (predictor > 0.5 → full correction).
+#     Predictor continues training each update step.
+# -----------------------------------------------------------------------
+
+env:
+  task: pick-place-v3
+  max_episode_steps: 500
+
+agent:
+  hidden_dim: 256
+  n_layers: 2
+  lr: 3.0e-4
+  gamma: 0.99
+  tau: 0.005
+  auto_alpha: true
+  alpha: 1.0
+  alpha_lr: 1.0e-4
+  alpha_min: 0.05
+  batch_size: 128
+
+correction:
+  hidden_dim: 128
+  n_layers: 2
+  lr: 3.0e-4
+  reg_coeff: 1.0e-3
+  output_scale: 0.1
+
+predictor:
+  hidden_dim: 64
+  lr: 3.0e-4
+  warmup: 100_000          # step at which gate activates for rollout
+  train_start: 10_000      # step at which predictor starts training
+  stall_window: 20         # recent reward window (was 5 — too noisy)
+  stall_drop_margin: 0.15  # fraction of ep_range below peak to count as stalled
+  pos_weight: 3.0          # BCE weight for stall (positive) samples
+  recent_buffer: 50_000    # predictor trains on last N transitions only
+
+training:
+  total_steps: 2_500_000
+  warmup_steps: 5_000
+  updates_per_step: 1
+  buffer_capacity: 1_000_000
+  eval_freq: 50_000
+  seed: 42
+
+logging:
+  use_wandb: false
+  project: latent-recovery-rl
+  run_name: sac_pp_learned_v4
+  log_freq: 1_000

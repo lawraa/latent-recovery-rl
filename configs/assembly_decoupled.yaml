@@ -1,13 +1,20 @@
 # -----------------------------------------------------------------------
-# SAC + Decoupled Latent Correction — assembly-v3
-# Hyperparameters match pick_place_decoupled.yaml for cross-task comparability.
+# SAC + Decoupled Latent Correction — assembly-v3  (v3: Phase A disabled)
 #
-# Trigger note: AssemblyTrigger is three-phase.
-#   Phase A (approach): tracks hand-to-wrench distance while grasp_success=0.
-#   Phase B (transport): tracks wrench-to-peg distance (||obs[4:7]-obs[-3:]||)
-#                        while grasp_success=1.
-#   Drop detection: fires immediately on grasp_success 1->0 flip.
+# Key design decision: phase_a_enabled: false
+#   Assembly-v3 requires 1M+ steps of stochastic exploration before the
+#   base actor achieves its first grasp. With Phase A enabled, the trigger
+#   fires at near-maximum rate (~6%) throughout this entire period on
+#   approach stalls — applying correction from a Q-function that has never
+#   seen a successful grasp. This injects noise that disrupts the exploration
+#   phase, causing all 4 decoupled seeds to fail (0% final SR).
 #
+#   With Phase A disabled, the trigger only fires after the agent has grasped
+#   (drop detection or Phase B transport stall). The correction trains on
+#   post-grasp experience where the Q-function has useful signal.
+#   See §51 in docs/progress.md for full diagnosis.
+#
+# Trigger note: Phase B tracks wrench-to-peg distance (||obs[4:7]-obs[-3:]||).
 # info['obj_to_target'] is hardcoded 0 in MetaWorld assembly-v3.
 # Success is detected via in_place_reward > 1 - success_threshold.
 # Peg position is read directly from obs[-3:] (last 3 obs dims).
@@ -55,5 +62,5 @@ training:
 logging:
   use_wandb: false
   project: latent-recovery-rl
-  run_name: sac_assembly_decoupled
+  run_name: sac_assembly_decoupled_v3
   log_freq: 1_000

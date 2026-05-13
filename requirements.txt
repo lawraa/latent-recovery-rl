@@ -2,12 +2,10 @@
 torch>=2.0.0
 numpy>=1.24.0
 
-# Meta-World (Farama Foundation version — install from source if pip version is stale)
-# pip install git+https://github.com/Farama-Foundation/Metaworld.git@main
-metaworld
-
-# MuJoCo (required by Meta-World)
-mujoco>=2.3.0
+# Environment
+gymnasium>=1.0.0
+mujoco>=3.0.0
+metaworld>=3.0.0
 
 # Logging
 wandb>=0.16.0
@@ -17,12 +15,3 @@ pyyaml>=6.0
 
 # Utilities
 tqdm>=4.65.0
-
-# Plotting (used in notebooks)
-matplotlib>=3.7.0
-seaborn>=0.12.0
-pandas>=2.0.0
-
-# Video saving (optional, for eval rollout recording)
-imageio>=2.31.0
-imageio-ffmpeg>=0.4.9
